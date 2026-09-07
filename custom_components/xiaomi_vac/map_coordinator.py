@@ -378,48 +378,15 @@ class XiaomiMapCoordinator(DataUpdateCoordinator[MapResult]):
         """
         results: list[MapResult | None] = []
         any_resolved = False
-        for slot in self._slot_candidates():
+        for slot in _SLOTS:
             try:
-                result = self._fetcher.fetch(slot)
+                results.append(self._fetcher.fetch(slot))
                 any_resolved = True
             except SessionExpired:
                 results.append(None)
-                continue
-            results.append(result)
-            if result is not None:
-                _LOGGER.warning("DIAG slot %r produced a readable map", slot)
-                break
         if not any_resolved:
             raise SessionExpired()
         return results
-
-    def _slot_candidates(self) -> tuple[str, ...]:
-        """Cloud object names to try for the active map, best guess first.
-
-        Upstream only ever asks for the fixed slots "0" and "1". On this Viomi
-        both 404 with "Object Not Found ... object name: <user>/<device>/0",
-        while the device's own map list reports exactly one map. That list
-        carries a `name` alongside `id`, which is the far likelier object name,
-        so try those first and keep the fixed slots as a fallback.
-        """
-        names: list[str] = []
-        for meta in self._map_list_meta:
-            if not meta.get("cur"):
-                continue
-            for key in ("name", "id"):
-                value = meta.get(key)
-                if value in (None, ""):
-                    continue
-                candidate = str(value)
-                if candidate not in names:
-                    names.append(candidate)
-        for slot in _SLOTS:
-            if slot not in names:
-                names.append(slot)
-        _LOGGER.warning(
-            "DIAG slot candidates=%s map_list=%r", names, self._map_list_meta
-        )
-        return tuple(names)
 
     def _resolve_active_id(
         self, active_meta: dict | None, decoded: list[MapResult], maps_meta: list[dict],

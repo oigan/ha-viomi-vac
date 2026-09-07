@@ -448,12 +448,6 @@ class XiaomiCloud:
     def _try_map_url(self, server: str, obj_name: str, endpoint: str) -> str | None:
         resp = self._call(self._api_url(server) + f"/v2/home/{endpoint}",
                           {"data": f'{{"obj_name":"{obj_name}"}}'})
-        # DIAG: upstream discards everything about this call, so a failing map
-        # fetch gives no way to tell a dead object from a wrong region/endpoint.
-        _LOGGER.warning(
-            "DIAG map_url: server=%s endpoint=%s obj=%s resp=%r",
-            server, endpoint, obj_name, resp,
-        )
         try:
             return resp["result"]["url"]
         except (TypeError, KeyError):
@@ -461,17 +455,18 @@ class XiaomiCloud:
 
     def download(self, url: str) -> bytes | None:
         r = self._s.get(url, timeout=15)
-        body = r.content or b""
-        # DIAG: upstream returns None for any non-200 without recording the
-        # status, which is exactly the information needed here.
         if r.status_code != 200:
-            _LOGGER.warning(
-                "DIAG download: HTTP %s len=%s host=%s body=%r",
-                r.status_code, len(body), url.split("?")[0], body[:300],
+            # Upstream returns None here without recording anything, which
+            # makes "the vacuum never uploaded a map" indistinguishable from a
+            # dead session or a wrong region. The FDS error body says which:
+            # a missing blob answers 404 "Object Not Found ... object name:
+            # <user>/<device>/0, region=<region>".
+            _LOGGER.debug(
+                "Map blob download failed: HTTP %s %r",
+                r.status_code, (r.content or b"")[:200],
             )
             return None
-        _LOGGER.warning("DIAG download: HTTP 200 len=%s", len(body))
-        return body
+        return r.content
 
 
 # --- crypto/util helpers ------------------------------------------------
