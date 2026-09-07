@@ -12,7 +12,6 @@ from vacuum_map_parser_base.config.color import ColorsPalette
 from vacuum_map_parser_base.config.drawable import Drawable
 from vacuum_map_parser_base.config.image_config import ImageConfig
 from vacuum_map_parser_base.config.size import Sizes
-from vacuum_map_parser_ijai.map_data_parser import IjaiMapDataParser
 
 from . import map_vector
 from .cloud.connector import XiaomiCloud
@@ -33,37 +32,9 @@ _DREAME_ENCKEY_PIID = 3
 _LOGGER = logging.getLogger(__name__)
 
 
-def _patch_parse_rooms() -> None:
-    """Work around an upstream crash on NON-ACTIVE maps (multi-map).
-
-    `IjaiMapDataParser._parse_rooms` looks up the entry in `mapInfo` whose
-    `mapHeadId` equals the active map's, purely to log its name. On a stored,
-    non-active map that id matches nothing, so `current_map` is left unbound and
-    the method raises `UnboundLocalError` BEFORE the room-naming loop runs —
-    killing the whole parse. The naming loop itself reads `roomDataInfo` and does
-    not need `current_map` at all, so we drop in a version that guards the lookup.
-    Pinned dep (vacuum-map-parser-ijai==0.1.1); bug still present in 0.1.1,
-    revisit if upstream fixes it.
-    """
-    parser_cls = IjaiMapDataParser
-
-    @staticmethod
-    def _parse_rooms(map_data_rooms: dict) -> None:
-        rm = parser_cls.robot_map
-        map_id = rm.mapHead.mapHeadId
-        current_map = next((m for m in rm.mapInfo if m.mapHeadId == map_id), None)
-        if current_map is not None:
-            _LOGGER.debug("map#%d: %s", current_map.mapHeadId, current_map.mapName)
-        for r in rm.roomDataInfo:
-            if map_data_rooms is not None and r.roomId in map_data_rooms:
-                map_data_rooms[r.roomId].name = r.roomName
-                map_data_rooms[r.roomId].pos_x = r.roomNamePost.x
-                map_data_rooms[r.roomId].pos_y = r.roomNamePost.y
-
-    parser_cls._parse_rooms = _parse_rooms
-
-
-_patch_parse_rooms()
+# Upstream patches IjaiMapDataParser._parse_rooms here, at import time, to work
+# around a crash on non-active ijai maps. Dropped: this build registers only
+# viomi.vacuum.v13, and the unconditional call would drag in the ijai parser.
 
 _DRAWABLES = [
     Drawable.PATH, Drawable.CHARGER, Drawable.VACUUM_POSITION,
@@ -159,11 +130,8 @@ class MapFetcher:
         dreame with enckey: if the parser has a model-specific IV, delegate to
         parser.unpack_map (it applies AES-CBC with that IV). Otherwise use the
         Tasshack zero-IV chain via dreame_decrypt_cloud_blob.
-        xiaomi: bypasses parser.unpack_map (vacuum_map_parser_xiaomi's own
-        decrypt() is broken for this whole model family, see
-        xiaomi_json_decrypt.py) and decrypts locally instead. Returns a JSON
-        *string*, not bytes, same contract as the upstream decrypt() this
-        replaces (parser.parse() only accepts str or dict).
+        Upstream also has a xiaomi branch that decrypts locally; it is dropped
+        here along with the xiaomi profiles.
         All other paths go through parser.unpack_map normally.
         """
         if self._brand == "dreame" and self._enckey is not None:
@@ -171,9 +139,6 @@ class MapFetcher:
             if DreameMapDataParser.IVs.get(self._model) is not None:
                 return self._parser.unpack_map(raw, enckey=self._enckey)
             return dreame_decrypt_cloud_blob(raw, self._enckey)
-        if self._brand == "xiaomi":
-            from .xiaomi_json_decrypt import decrypt_xiaomi_json_map
-            return decrypt_xiaomi_json_map(raw, self._model, self._device_id)
         return self._parser.unpack_map(raw, **self._unpack_kw)
 
     def fetch(self, slot: str = "0") -> MapResult | None:

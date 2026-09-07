@@ -13,25 +13,44 @@ this Viomi — so the code needs changes that only make sense for one model.
 
 ## Status
 
-Local control, sensors, fan speed, water level and room cleaning work.
+Working: local control, sensors, fan speed, water level, room cleaning, **and the map**.
 
-**Maps do not render yet.** The cloud session is valid and the map is listed
-(`maps_listed=1`), but fetching the map blob fails before any decryption is attempted:
+### The map needs the vacuum to move first
+
+A docked Viomi never uploads a map to the cloud, and the Mi Home app shows the *local* map, so
+nothing hints that the cloud copy is missing. `get_interim_file_url` makes it worse by minting a
+signed URL for an object that does not exist; only the download reveals it:
 
 ```
-Map key inputs: brand=viomi wifi_sn='' mac= user_id=... device_id=... model=viomi.vacuum.v13
-Map download failed (slot 0)
-Map download failed (slot 1)
-Map cycle: slot keys=['B', 'B'] active_id=1676290569 maps_listed=1
+HTTP 404 Object Not Found: Make sure your object exist in current region,
+object name: <user_id>/<device_id>/0, region=awsde0
 ```
 
-Empty `wifi_sn`/`mac` are **not** the cause — `required_map_key_inputs("viomi")` returns an
-empty set, because the Viomi parser needs no local key material.
+If `camera.<name>_map` is `unavailable`, call **`xiaomi_vac.refresh_map`** (with
+`confirm_movement: true`). It drives the vacuum off the dock briefly so it uploads, then
+re-docks it. Any normal clean does the same.
 
-This build therefore carries **temporary diagnostic logging** (marked `DIAG` in
-`cloud/connector.py`) that records the HTTP status of the map download and the raw response
-of the interim-file-url call — both of which upstream discards. That logging is the only
-change from upstream so far, and comes out once the cause is known.
+Two things this is *not*, both checked here so nobody repeats them:
+
+- Empty `wifi_sn` / `mac` in the debug log are normal — `required_map_key_inputs("viomi")` is
+  an empty set; only ijai needs key material.
+- The fixed slots `"0"` / `"1"` are correct. Once a real upload existed, slot `"0"` returned
+  HTTP 200, while the map-list `name` and `id` kept 404ing.
+
+## What was removed
+
+| Removed | Kept |
+|---------|------|
+| ijai, Dreame, Roidmi and Xiaomi profiles (66 models) | `viomi.vacuum.v13` |
+| Their four map-parser dependencies | `vacuum-map-parser-viomi`, `-base` |
+| 64 of 68 Lottie shapes (5.6 MB to 400 KB) | `shape-11-*`, the V13 artwork |
+| `xiaomi_json_decrypt.py` and the ijai `_parse_rooms` monkeypatch | the shared map pipeline |
+| The test suite | — |
+
+The shared dispatch code in `map_parsers.py` is left intact even where it is now unreachable:
+its parser imports are lazy, so it costs nothing at runtime, and keeping it makes merges from
+upstream far less painful. Dropping the test suite is a real loss of safety net when merging —
+upstream's is still reachable through the `upstream` remote.
 
 ## Relationship to upstream
 

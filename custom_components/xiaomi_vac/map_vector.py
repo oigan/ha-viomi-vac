@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import vacuum_map_parser_ijai.RobotMap_pb2 as RobotMap
 
 
 def _rle(grid: bytes) -> list[int]:
@@ -191,6 +190,10 @@ def extract_grid(unpacked: bytes) -> dict[str, Any]:
     parser's MapData; this returns only what the parser discards: the raw grid,
     the cell<->metre bounds, and the room boundary chains.
     """
+    # Import here, not at module scope: the ijai protobuf is only needed for the
+    # ijai grid, and this build ships viomi only, so the dep is not installed.
+    import vacuum_map_parser_ijai.RobotMap_pb2 as RobotMap
+
     rm = RobotMap.RobotMap()
     rm.ParseFromString(unpacked)
     h = rm.mapHead
