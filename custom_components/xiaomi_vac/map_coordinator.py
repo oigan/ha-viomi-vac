@@ -544,7 +544,12 @@ class XiaomiMapCoordinator(DataUpdateCoordinator[MapResult]):
                     "bad blob and nothing cached — waiting for a good upload",
                     active_id,
                 )
-                raise UpdateFailed("Waiting for a readable map upload from the vacuum")
+                raise UpdateFailed(
+                    "The vacuum has not uploaded a map to the cloud. A docked vacuum "
+                    "never does, and the Mi Home app shows its local copy, so this looks "
+                    "like nothing is wrong. Run the xiaomi_vac.refresh_map action, or "
+                    "start any clean, and the map appears within a poll or two."
+                )
             _LOGGER.debug(
                 "Serving map active_id=%s (%s this cycle), %d map(s) cached",
                 active_id, "live+cached" if decoded else "from cache",
